@@ -73,13 +73,16 @@ jobs:
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
-        choco install sql-server-2022 -y --params "/IGNOREPENDINGREBOOT /SECURITYMODE=SQL /SAPWD=$env:MSSQL_SA_PASSWORD /TCPENABLED=1"
+        # Backtick-escape inner double quotes around SAPWD so passwords with
+        # whitespace/special characters survive the SQL Server installer's parser.
+        $params = "/IGNOREPENDINGREBOOT /SECURITYMODE=SQL /SAPWD=`"$($env:MSSQL_SA_PASSWORD)`" /TCPENABLED=1"
+        choco install sql-server-2022 -y --params "$params"
         Start-Service -Name MSSQLSERVER -ErrorAction SilentlyContinue
         for ($i = 0; $i -lt 30; $i++) {
-          try { sqlcmd -S localhost -U sa -P "$env:MSSQL_SA_PASSWORD" -Q "SELECT 1" -b; break }
+          try { sqlcmd -S localhost -U sa -P "$($env:MSSQL_SA_PASSWORD)" -Q "SELECT 1" -b; break }
           catch { Start-Sleep -Seconds 2 }
         }
-        sqlcmd -S localhost -U sa -P "$env:MSSQL_SA_PASSWORD" -Q "CREATE DATABASE ducklake_demo"
+        sqlcmd -S localhost -U sa -P "$($env:MSSQL_SA_PASSWORD)" -Q "CREATE DATABASE ducklake_demo"
 
     - name: Checkout DuckDB to version
       run: |

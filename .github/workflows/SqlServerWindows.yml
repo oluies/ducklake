@@ -24,7 +24,11 @@ jobs:
     - name: Install SQL Server 2022 via Chocolatey
       shell: pwsh
       run: |
-        choco install sql-server-2022 -y --params "/IGNOREPENDINGREBOOT /SECURITYMODE=SQL /SAPWD=$env:MSSQL_SA_PASSWORD /TCPENABLED=1"
+        # Quote SAPWD with embedded double-quotes (backtick-escaped) so passwords
+        # containing whitespace or shell-special characters don't break the SQL
+        # Server unattended installer's parameter parser.
+        $params = "/IGNOREPENDINGREBOOT /SECURITYMODE=SQL /SAPWD=`"$($env:MSSQL_SA_PASSWORD)`" /TCPENABLED=1"
+        choco install sql-server-2022 -y --params "$params"
         # Start the named instance.
         Start-Service -Name MSSQLSERVER -ErrorAction SilentlyContinue
         # Enable TCP/IP on default port 1433.
@@ -35,7 +39,7 @@ jobs:
       run: |
         for ($i = 0; $i -lt 30; $i++) {
           try {
-            sqlcmd -S localhost -U sa -P "$env:MSSQL_SA_PASSWORD" -Q "SELECT 1" -b
+            sqlcmd -S localhost -U sa -P "$($env:MSSQL_SA_PASSWORD)" -Q "SELECT 1" -b
             break
           } catch {
             Start-Sleep -Seconds 2
@@ -45,7 +49,7 @@ jobs:
     - name: Create ducklakedb database
       shell: pwsh
       run: |
-        sqlcmd -S localhost -U sa -P "$env:MSSQL_SA_PASSWORD" -Q "CREATE DATABASE ducklakedb"
+        sqlcmd -S localhost -U sa -P "$($env:MSSQL_SA_PASSWORD)" -Q "CREATE DATABASE ducklakedb"
 
     - name: Checkout DuckDB to version
       shell: bash
