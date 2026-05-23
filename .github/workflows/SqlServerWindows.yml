@@ -26,6 +26,8 @@ jobs:
     env:
       VCPKG_TARGET_TRIPLET: x64-windows
       VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+      BUILD_EXTENSION_TEST_DEPS: full
+      GEN: Ninja
       ENABLE_MSSQL: ON
       DUCKLAKE_CI: 1
       MSSQL_SA_PASSWORD: "DuckLake!2026"

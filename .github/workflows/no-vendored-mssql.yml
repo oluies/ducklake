@@ -15,8 +15,13 @@ jobs:
 
     - name: Fail on .patch files referencing mssql
       run: |
-        if git ls-files | grep -E '\.patch$' | xargs --no-run-if-empty grep -l -i mssql 2>/dev/null; then
-          echo "::error ::Found .patch files referencing mssql. NFR-001/SC-003 forbid this."
+        # Capture output explicitly — xargs --no-run-if-empty exits 0 when there
+        # are no inputs, so `if grep | xargs grep` always fired even on zero
+        # matches.
+        matches=$(git ls-files | grep -E '\.patch$' | xargs --no-run-if-empty grep -l -i mssql 2>/dev/null || true)
+        if [ -n "${matches}" ]; then
+          echo "::error ::Found .patch files referencing mssql. NFR-001/SC-003 forbid this:"
+          printf '%s\n' "${matches}"
           exit 1
         fi
 

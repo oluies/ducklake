@@ -41,6 +41,11 @@ jobs:
       ENABLE_MSSQL: ON
       DUCKLAKE_CI: 1
       MSSQL_SA_PASSWORD: "DuckLake!2026"
+      # vcpkg integration — matches Catalogs.yml so simdutf/roaring are resolved.
+      VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+      VCPKG_TARGET_TRIPLET: ${{ startsWith(matrix.os, 'windows') && 'x64-windows' || 'x64-linux' }}
+      BUILD_EXTENSION_TEST_DEPS: full
+      GEN: Ninja
 
     steps:
     - uses: actions/checkout@v3
@@ -107,9 +112,6 @@ jobs:
         vcpkgGitCommitId: 84bab45d415d22042bd0b9081aea57f362da3f35
 
     - name: Build extension
-      env:
-        VCPKG_TARGET_TRIPLET: ${{ runner.os == 'Windows' && 'x64-windows' || 'x64-linux' }}
-        VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
       run: |
         make release CMAKE_FLAGS="-DENABLE_MSSQL=ON"
 
