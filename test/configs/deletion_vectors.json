@@ -32,6 +32,26 @@
       "paths": [
         "test/sql/encryption/encryption.test"
       ]
+    },
+    {
+      "reason": "MSSQL backend tests \u2014 require sqlserver.json config (test/configs/sqlserver.json)",
+      "paths": [
+        "test/sql/metadata/ducklake_attach_sqlserver.test",
+        "test/sql/metadata/ducklake_settings_sqlserver.test",
+        "test/sql/metadata/ducklake_mssql_txn_pinning.test",
+        "test/sql/metadata/ducklake_v10_to_v11_migration_sqlserver.test",
+        "test/sql/dml/ducklake_dml_sqlserver.test",
+        "test/sql/snapshots/ducklake_time_travel_sqlserver.test",
+        "test/sql/concurrency/ducklake_concurrent_commits_sqlserver.test",
+        "test/sql/errors/ducklake_identifier_length_sqlserver.test",
+        "test/sql/errors/ducklake_mssql_missing_extension.test",
+        "test/sql/errors/ducklake_mssql_bad_credentials.test",
+        "test/sql/errors/ducklake_mssql_error_wrapping.test",
+        "test/sql/maintenance/ducklake_expire_snapshots_sqlserver.test",
+        "test/sql/maintenance/ducklake_compaction_sqlserver.test",
+        "test/sql/inlined/ducklake_inlined_flush_sqlserver.test",
+        "test/sql/walkthrough/ducklake_mssql_orders_walkthrough.test"
+      ]
     }
   ]
 }

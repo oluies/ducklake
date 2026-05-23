@@ -8,14 +8,16 @@
     "sqlite_scanner",
     "icu",
     "httpfs"
-  ],"skip_error_messages": [
+  ],
+  "skip_error_messages": [
     "database is locked"
   ],
-  "test_env": [{
-      "env_name":  "DUCKLAKE_CONNECTION",
+  "test_env": [
+    {
+      "env_name": "DUCKLAKE_CONNECTION",
       "env_value": "sqlite:{TEST_DIR}/{BASE_TEST_NAME}.db"
-   }],
-  "skip_error_messages": ["database is locked"],
+    }
+  ],
   "skip_tests": [
     {
       "reason": "Test is slow",
@@ -73,7 +75,7 @@
         "test/sql/remove_orphans/metadata_in_data_path.test"
       ]
     },
-     {
+    {
       "reason": "SELECT name FROM sqlite_master WHERE length(sql) > 0 AND type='table'",
       "paths": [
         "test/sql/initialize/read_only_mode.test",
@@ -92,7 +94,8 @@
       "paths": [
         "test/sql/transaction/transaction_schema.test"
       ]
-    },{
+    },
+    {
       "reason": "Test only for Postgres as catalog",
       "paths": [
         "test/sql/metadata/ducklake_settings_postgres.test"
@@ -116,6 +119,26 @@
       "reason": "FIXME: old sqlite extension has issues with this query, can be removed after v1.5.1",
       "paths": [
         "test/sql/metadata/ducklake_ui_catalog_query.test"
+      ]
+    },
+    {
+      "reason": "MSSQL backend tests \u2014 require sqlserver.json config (test/configs/sqlserver.json)",
+      "paths": [
+        "test/sql/metadata/ducklake_attach_sqlserver.test",
+        "test/sql/metadata/ducklake_settings_sqlserver.test",
+        "test/sql/metadata/ducklake_mssql_txn_pinning.test",
+        "test/sql/metadata/ducklake_v10_to_v11_migration_sqlserver.test",
+        "test/sql/dml/ducklake_dml_sqlserver.test",
+        "test/sql/snapshots/ducklake_time_travel_sqlserver.test",
+        "test/sql/concurrency/ducklake_concurrent_commits_sqlserver.test",
+        "test/sql/errors/ducklake_identifier_length_sqlserver.test",
+        "test/sql/errors/ducklake_mssql_missing_extension.test",
+        "test/sql/errors/ducklake_mssql_bad_credentials.test",
+        "test/sql/errors/ducklake_mssql_error_wrapping.test",
+        "test/sql/maintenance/ducklake_expire_snapshots_sqlserver.test",
+        "test/sql/maintenance/ducklake_compaction_sqlserver.test",
+        "test/sql/inlined/ducklake_inlined_flush_sqlserver.test",
+        "test/sql/walkthrough/ducklake_mssql_orders_walkthrough.test"
       ]
     }
   ]
