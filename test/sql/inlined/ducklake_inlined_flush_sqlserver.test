@@ -1,0 +1,44 @@
+# name: test/sql/inlined/ducklake_inlined_flush_sqlserver.test
+# description: US4 — inlined-data flush writes rows to Parquet and clears the inline rows on SQL Server.
+# group: [inlined]
+
+require ducklake
+
+require mssql
+
+require-env DUCKLAKE_MSSQL_CONNSTR
+
+statement ok
+ATTACH 'ducklake:mssql:${DUCKLAKE_MSSQL_CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}', INLINING_ROW_THRESHOLD 3);
+
+statement ok
+USE lake;
+
+statement ok
+CREATE TABLE tiny(id BIGINT);
+
+statement ok
+INSERT INTO tiny VALUES (1), (2);
+
+# Below threshold — rows still inlined.
+query I
+SELECT COUNT(*) FROM ducklake_table_files('lake', 'tiny');
+----
+0
+
+# Cross the threshold — next commit flushes inlined rows to Parquet.
+statement ok
+INSERT INTO tiny VALUES (3), (4), (5), (6);
+
+statement ok
+CALL ducklake_flush_inlined_data('lake');
+
+query I
+SELECT COUNT(*) >= 1 FROM ducklake_table_files('lake', 'tiny');
+----
+true
+
+query I
+SELECT COUNT(*) FROM tiny;
+----
+6

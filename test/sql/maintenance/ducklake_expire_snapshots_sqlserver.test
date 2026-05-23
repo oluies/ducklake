@@ -1,0 +1,40 @@
+# name: test/sql/maintenance/ducklake_expire_snapshots_sqlserver.test
+# description: US4 — ducklake_expire_snapshots against a SQL Server-backed catalog.
+# group: [maintenance]
+
+require ducklake
+
+require mssql
+
+require-env DUCKLAKE_MSSQL_CONNSTR
+
+statement ok
+ATTACH 'ducklake:mssql:${DUCKLAKE_MSSQL_CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}');
+
+statement ok
+USE lake;
+
+statement ok
+CREATE TABLE t(id BIGINT);
+
+statement ok
+INSERT INTO t VALUES (1);
+
+statement ok
+INSERT INTO t VALUES (2);
+
+statement ok
+INSERT INTO t VALUES (3);
+
+query I
+SELECT COUNT(*) >= 3 FROM ducklake_snapshots('lake');
+----
+true
+
+statement ok
+CALL ducklake_expire_snapshots('lake', older_than => NOW());
+
+query I
+SELECT COUNT(*) FROM ducklake_snapshots('lake');
+----
+1

@@ -1,0 +1,53 @@
+# name: test/sql/maintenance/ducklake_compaction_sqlserver.test
+# description: US4 — compaction merges small data files on a SQL Server-backed catalog.
+# group: [maintenance]
+
+require ducklake
+
+require mssql
+
+require-env DUCKLAKE_MSSQL_CONNSTR
+
+statement ok
+ATTACH 'ducklake:mssql:${DUCKLAKE_MSSQL_CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}');
+
+statement ok
+USE lake;
+
+statement ok
+CREATE TABLE small(id BIGINT);
+
+# Generate many small commits → many small data files.
+statement ok
+INSERT INTO small VALUES (1);
+
+statement ok
+INSERT INTO small VALUES (2);
+
+statement ok
+INSERT INTO small VALUES (3);
+
+statement ok
+INSERT INTO small VALUES (4);
+
+statement ok
+INSERT INTO small VALUES (5);
+
+query I
+SELECT COUNT(*) FROM ducklake_table_files('lake', 'small');
+----
+5
+
+statement ok
+CALL ducklake_merge_adjacent_files('lake');
+
+# After compaction expect fewer files; exact count depends on file-size threshold.
+query I
+SELECT COUNT(*) <= 2 FROM ducklake_table_files('lake', 'small');
+----
+true
+
+query I
+SELECT COUNT(*) FROM small;
+----
+5
