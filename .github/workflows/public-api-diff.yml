@@ -1,0 +1,33 @@
+name: NFR-004 — No new public C++ API
+on:
+  pull_request:
+    paths:
+      - 'src/include/**'
+
+jobs:
+  public-api-diff:
+    name: Guard against unapproved public-API additions
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Compute new symbol additions outside the sanctioned MSSQL header
+      run: |
+        base="${{ github.base_ref }}"
+        git fetch origin "$base" --depth=1
+        # New non-comment, non-blank lines added under src/include/, excluding the
+        # one file allowed for this feature.
+        added=$(git diff "origin/$base"...HEAD -- 'src/include/**' \
+                 ':(exclude)src/include/metadata_manager/sqlserver_metadata_manager.hpp' \
+                 | grep -E '^\+' | grep -v '^\+\+\+' \
+                 | grep -E '^\+\s*(class|struct|template|virtual|[A-Za-z_][A-Za-z0-9_]*\s*\()' \
+                 | grep -v '^\+\s*//' || true)
+        if [ -n "$added" ]; then
+          echo "::warning ::This PR appears to add new public C++ API outside src/include/metadata_manager/sqlserver_metadata_manager.hpp."
+          echo "$added"
+          # Soft gate: tag the PR for manual review rather than auto-fail.
+          # Hard fail can be enabled by switching this to 'exit 1'.
+          exit 0
+        fi

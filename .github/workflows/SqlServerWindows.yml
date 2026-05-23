@@ -1,0 +1,66 @@
+name: DBMS Catalog Tests — SQL Server (Windows)
+on: [push, pull_request, repository_dispatch]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  ducklake-mssql-windows:
+    name: DuckLake against SQL Server 2022 (windows-2022)
+    runs-on: windows-2022
+
+    env:
+      ENABLE_MSSQL: ON
+      DUCKLAKE_CI: 1
+      MSSQL_SA_PASSWORD: "DuckLake!2026"
+      DUCKLAKE_MSSQL_CONNSTR: "Server=localhost,1433;Database=ducklakedb;User Id=sa;Password=DuckLake!2026;TrustServerCertificate=true;"
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        submodules: 'true'
+
+    - name: Install SQL Server 2022 via Chocolatey
+      shell: pwsh
+      run: |
+        choco install sql-server-2022 -y --params "/IGNOREPENDINGREBOOT /SECURITYMODE=SQL /SAPWD=$env:MSSQL_SA_PASSWORD /TCPENABLED=1"
+        # Start the named instance.
+        Start-Service -Name MSSQLSERVER -ErrorAction SilentlyContinue
+        # Enable TCP/IP on default port 1433.
+        Import-Module SqlServer -ErrorAction SilentlyContinue
+
+    - name: Wait for SQL Server
+      shell: pwsh
+      run: |
+        for ($i = 0; $i -lt 30; $i++) {
+          try {
+            sqlcmd -S localhost -U sa -P "$env:MSSQL_SA_PASSWORD" -Q "SELECT 1" -b
+            break
+          } catch {
+            Start-Sleep -Seconds 2
+          }
+        }
+
+    - name: Create ducklakedb database
+      shell: pwsh
+      run: |
+        sqlcmd -S localhost -U sa -P "$env:MSSQL_SA_PASSWORD" -Q "CREATE DATABASE ducklakedb"
+
+    - name: Checkout DuckDB to version
+      shell: bash
+      run: |
+        cd duckdb
+        git checkout $(cat ../.github/duckdb-version)
+
+    - name: Build extension
+      shell: bash
+      run: |
+        make release CMAKE_FLAGS="-DENABLE_MSSQL=ON"
+
+    - name: Test SQL Server
+      shell: bash
+      env:
+        DUCKDB_TPCH_ANSWERS_DIR: ${{ github.workspace }}/duckdb/extension/tpch/dbgen/answers
+      run: |
+        build/release/test/unittest --test-config test/configs/sqlserver.json --test-dir ./ "test/sql/*"

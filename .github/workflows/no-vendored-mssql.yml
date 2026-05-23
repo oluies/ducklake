@@ -1,0 +1,36 @@
+name: NFR-001 / SC-003 — No vendored mssql sources or patches
+on: [push, pull_request]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  no-vendored-mssql:
+    name: Guard against vendored mssql-extension
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 1
+
+    - name: Fail on .patch files referencing mssql
+      run: |
+        if git ls-files | grep -E '\.patch$' | xargs --no-run-if-empty grep -l -i mssql 2>/dev/null; then
+          echo "::error ::Found .patch files referencing mssql. NFR-001/SC-003 forbid this."
+          exit 1
+        fi
+
+    - name: Fail on vendored mssql source directories
+      run: |
+        if git ls-files | grep -E '^(third_party|vendor)/mssql' ; then
+          echo "::error ::Found vendored mssql-extension source path. NFR-001 forbids this."
+          exit 1
+        fi
+
+    - name: Fail on local SOURCE_DIR for mssql in extension_config.cmake
+      run: |
+        if grep -E 'duckdb_extension_load\s*\(\s*mssql\b' .github/config/extensions/mssql.cmake \
+             | grep -E 'SOURCE_DIR' ; then
+          echo "::error ::mssql.cmake declares SOURCE_DIR — must use GIT_URL/GIT_TAG only."
+          exit 1
+        fi
