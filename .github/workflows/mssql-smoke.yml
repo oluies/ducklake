@@ -1,0 +1,148 @@
+name: MSSQL Smoke + Metadata Dump
+on:
+  pull_request:
+    paths:
+      - 'src/metadata_manager/sqlserver_*'
+      - 'src/include/metadata_manager/sqlserver_*'
+      - 'extension_config.cmake'
+      - '.github/config/extensions/mssql.cmake'
+      - 'specs/001-mssql-metadata-backend/**'
+      - 'scripts/ducklake_mssql_walkthrough.sh'
+      - 'test/sql/walkthrough/**'
+      - 'test/fixtures/sqlserver_walkthrough_seed.sql'
+      - '.github/workflows/mssql-smoke.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smoke on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2022]
+        include:
+          - os: ubuntu-latest
+            shell: bash
+          - os: windows-2022
+            shell: bash
+
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: ${{ matrix.shell }}
+
+    env:
+      ENABLE_MSSQL: ON
+      DUCKLAKE_CI: 1
+      MSSQL_SA_PASSWORD: "DuckLake!2026"
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        submodules: 'true'
+
+    - name: Read pinned mssql-extension version
+      id: pin
+      run: |
+        version=$(tr -d '[:space:]' < specs/001-mssql-metadata-backend/mssql-extension.version)
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+        echo "Pinned mssql extension version: ${version}"
+
+    # --- Linux: docker service container ---
+    - name: Start SQL Server (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        docker run -d --name mssql \
+          -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD="${MSSQL_SA_PASSWORD}" -e MSSQL_PID=Developer \
+          -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+        for i in {1..30}; do
+          docker exec mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "${MSSQL_SA_PASSWORD}" -C -Q "SELECT 1" && break
+          sleep 2
+        done
+        docker exec mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "${MSSQL_SA_PASSWORD}" -C -Q "CREATE DATABASE ducklake_demo"
+
+    # --- Windows: chocolatey install ---
+    - name: Start SQL Server (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        choco install sql-server-2022 -y --params "/IGNOREPENDINGREBOOT /SECURITYMODE=SQL /SAPWD=$env:MSSQL_SA_PASSWORD /TCPENABLED=1"
+        Start-Service -Name MSSQLSERVER -ErrorAction SilentlyContinue
+        for ($i = 0; $i -lt 30; $i++) {
+          try { sqlcmd -S localhost -U sa -P "$env:MSSQL_SA_PASSWORD" -Q "SELECT 1" -b; break }
+          catch { Start-Sleep -Seconds 2 }
+        }
+        sqlcmd -S localhost -U sa -P "$env:MSSQL_SA_PASSWORD" -Q "CREATE DATABASE ducklake_demo"
+
+    - name: Checkout DuckDB to version
+      run: |
+        cd duckdb
+        git checkout $(cat ../.github/duckdb-version)
+
+    - name: Build extension
+      run: |
+        make release CMAKE_FLAGS="-DENABLE_MSSQL=ON"
+
+    - name: Assert resolved mssql extension version matches pin
+      run: |
+        actual=$(./build/release/duckdb -csv -noheader -c "INSTALL mssql FROM community; LOAD mssql; SELECT extension_version FROM duckdb_extensions() WHERE extension_name='mssql';")
+        echo "actual=${actual} pinned=${{ steps.pin.outputs.version }}"
+        if [ "${actual}" != "${{ steps.pin.outputs.version }}" ]; then
+          echo "::error ::resolved mssql version ${actual} != pinned ${{ steps.pin.outputs.version }}. Bump mssql-extension.version intentionally."
+          exit 1
+        fi
+
+    - name: Seed walkthrough database
+      run: |
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          docker exec -i mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "${MSSQL_SA_PASSWORD}" -C < test/fixtures/sqlserver_walkthrough_seed.sql
+        else
+          sqlcmd -S localhost -U sa -P "${MSSQL_SA_PASSWORD}" -i test/fixtures/sqlserver_walkthrough_seed.sql
+        fi
+
+    - name: Run walkthrough (--ci) and capture metadata dump
+      env:
+        DUCKLAKE_MSSQL_CONNSTR: "Server=localhost,1433;Database=ducklake_demo;User Id=sa;Password=DuckLake!2026;TrustServerCertificate=true;"
+        DUCKDB: "./build/release/duckdb"
+      run: |
+        chmod +x scripts/ducklake_mssql_walkthrough.sh
+        scripts/ducklake_mssql_walkthrough.sh --ci | tee metadata-dump.txt
+
+    - name: Render markdown dump to HTML (Linux only)
+      if: runner.os == 'Linux'
+      run: |
+        if command -v pandoc >/dev/null 2>&1; then
+          pandoc metadata-dump.txt -o metadata-dump.html
+        else
+          cp metadata-dump.txt metadata-dump.html
+        fi
+
+    - name: Upload metadata dump
+      uses: actions/upload-artifact@v4
+      with:
+        name: metadata-dump-${{ matrix.os }}
+        path: |
+          metadata-dump.txt
+          metadata-dump.html
+
+    - name: Run golden SQLLogicTest
+      env:
+        DUCKLAKE_MSSQL_CONNSTR: "Server=localhost,1433;Database=ducklake_demo;User Id=sa;Password=DuckLake!2026;TrustServerCertificate=true;"
+        DUCKDB_TPCH_ANSWERS_DIR: ${{ github.workspace }}/duckdb/extension/tpch/dbgen/answers
+      run: |
+        build/release/test/unittest --test-config test/configs/sqlserver.json --test-dir ./ "test/sql/walkthrough/ducklake_mssql_orders_walkthrough.test"
+
+    - name: Append metadata dump to job summary
+      if: always()
+      run: |
+        echo "## Metadata catalog state (first 200 lines)" >> "$GITHUB_STEP_SUMMARY"
+        echo '```' >> "$GITHUB_STEP_SUMMARY"
+        head -200 metadata-dump.txt >> "$GITHUB_STEP_SUMMARY" || true
+        echo '```' >> "$GITHUB_STEP_SUMMARY"

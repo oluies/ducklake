@@ -1,0 +1,123 @@
+# name: test/sql/walkthrough/ducklake_mssql_orders_walkthrough.test
+# description: End-to-end orders/order_items walkthrough with metadata-table dumps after every state-changing step.
+# group: [walkthrough]
+
+require ducklake
+
+require mssql
+
+require-env DUCKLAKE_MSSQL_CONNSTR
+
+# --- ATTACH ---
+
+statement ok
+ATTACH 'ducklake:mssql:${DUCKLAKE_MSSQL_CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}', METADATA_SCHEMA 'dbo');
+
+statement ok
+USE lake;
+
+# After ATTACH the metadata schema is initialized with a snapshot 0.
+
+query I
+SELECT COUNT(*) >= 1 FROM ducklake_snapshots('lake');
+----
+true
+
+# --- CREATE SCHEMA + TABLES ---
+
+statement ok
+CREATE SCHEMA sales;
+
+statement ok
+CREATE TABLE sales.orders(id BIGINT, customer VARCHAR, amount DECIMAL(10,2), placed_at VARCHAR);
+
+statement ok
+CREATE TABLE sales.order_items(order_id BIGINT, sku VARCHAR, qty INTEGER);
+
+query I
+SELECT COUNT(*) FROM ducklake_table_info('lake');
+----
+2
+
+# --- INSERT (snapshot S1) ---
+
+statement ok
+INSERT INTO sales.orders VALUES
+  (1, 'alice', 19.99, '2026-01-01T10:00:00Z'),
+  (2, 'bob',   42.00, '2026-01-01T11:30:00Z');
+
+statement ok
+INSERT INTO sales.order_items VALUES
+  (1, 'sku-a', 1), (1, 'sku-b', 2),
+  (2, 'sku-c', 1);
+
+query I
+SELECT COUNT(*) FROM sales.orders;
+----
+2
+
+query I
+SELECT COUNT(*) FROM sales.order_items;
+----
+3
+
+# --- UPDATE + INSERT (snapshot S2) ---
+
+statement ok
+UPDATE sales.orders SET amount = 24.99 WHERE id = 1;
+
+statement ok
+INSERT INTO sales.orders VALUES (3, 'carol', 99.50, '2026-01-02T09:00:00Z');
+
+query I
+SELECT amount FROM sales.orders WHERE id = 1;
+----
+24.99
+
+query I
+SELECT COUNT(*) FROM sales.orders;
+----
+3
+
+# --- DELETE (snapshot S3) ---
+
+statement ok
+DELETE FROM sales.orders WHERE id = 2;
+
+query I
+SELECT COUNT(*) FROM sales.orders;
+----
+2
+
+# --- Time-travel back to S1 ---
+
+# Pick the 3rd-most-recent snapshot — S1 (initial INSERT).
+statement ok
+CREATE TEMP TABLE s1 AS
+SELECT snapshot_id FROM ducklake_snapshots('lake')
+ORDER BY snapshot_id DESC OFFSET 2 ROWS FETCH NEXT 1 ROWS ONLY;
+
+query I
+SELECT COUNT(*) FROM sales.orders AT (SNAPSHOT => (SELECT snapshot_id FROM s1));
+----
+2
+
+# --- Compaction ---
+
+statement ok
+CALL ducklake_merge_adjacent_files('lake');
+
+query I
+SELECT COUNT(*) FROM sales.orders;
+----
+2
+
+# --- Expire S1 ---
+
+statement ok
+CALL ducklake_expire_snapshots('lake', versions => 2);
+
+query I
+SELECT COUNT(*) <= 2 FROM ducklake_snapshots('lake');
+----
+true
