@@ -1,6 +1,7 @@
 #include "metadata_manager/sqlserver_metadata_manager.hpp"
 #include "common/ducklake_util.hpp"
 #include "duckdb/main/database.hpp"
+#include "duckdb/main/extension_helper.hpp"
 #include "storage/ducklake_catalog.hpp"
 #include "storage/ducklake_transaction.hpp"
 
@@ -8,6 +9,18 @@ namespace duckdb {
 
 SQLServerMetadataManager::SQLServerMetadataManager(DuckLakeTransaction &transaction)
     : DuckLakeMetadataManager(transaction) {
+	// FR-010 — surface a clear "install mssql extension" error early instead of letting the
+	// first mssql_exec call fail with "function not found".
+	auto context = transaction.context.lock();
+	if (context && !context->db->ExtensionIsLoaded("mssql")) {
+		if (ExtensionHelper::CanAutoloadExtension("mssql")) {
+			ExtensionHelper::AutoLoadExtension(*context, "mssql");
+		} else {
+			throw MissingExtensionException(
+			    "DuckLake catalog type 'mssql'/'sqlserver' requires the 'mssql' community extension. "
+			    "Install with: INSTALL mssql FROM community; LOAD mssql;");
+		}
+	}
 }
 
 bool SQLServerMetadataManager::TypeIsNativelySupported(const LogicalType &type) {
@@ -120,15 +133,32 @@ string SQLServerMetadataManager::SubstituteTemplateVariables(DuckLakeSnapshot sn
 	return query;
 }
 
+// FR-009 — on dispatch failure, throw a wrapped exception that prepends DuckLake context (op
+// name + offending-SQL snippet) and preserves the verbatim upstream SQL Server message via
+// ErrorData::Throw's prefix mechanism.
+static unique_ptr<QueryResult> WrapDispatchResult(unique_ptr<QueryResult> result, const string &op,
+                                                  const string &sql) {
+	if (result && result->HasError()) {
+		string snippet = sql.length() > 1024 ? sql.substr(0, 1024) + "…" : sql;
+		string prefix =
+		    StringUtil::Format("DuckLake (SQL Server backend) mssql_%s failed (offending SQL: %s): ",
+		                       op, snippet);
+		result->GetErrorObject().Throw(prefix);
+	}
+	return result;
+}
+
 unique_ptr<QueryResult> SQLServerMetadataManager::RunMssqlExec(const string &catalog_literal, const string &sql) {
 	auto &connection = transaction.GetConnection();
-	return connection.Query(StringUtil::Format("CALL mssql_exec(%s, %s)", catalog_literal, SQLString(sql)));
+	auto result = connection.Query(StringUtil::Format("CALL mssql_exec(%s, %s)", catalog_literal, SQLString(sql)));
+	return WrapDispatchResult(std::move(result), "mssql_exec", sql);
 }
 
 unique_ptr<QueryResult> SQLServerMetadataManager::RunMssqlScan(const string &catalog_literal, const string &sql) {
 	auto &connection = transaction.GetConnection();
-	return connection.Query(
+	auto result = connection.Query(
 	    StringUtil::Format("SELECT * FROM mssql_scan(%s, %s)", catalog_literal, SQLString(sql)));
+	return WrapDispatchResult(std::move(result), "mssql_scan", sql);
 }
 
 // Minimal T-SQL rewrites for base-class SQL that uses Postgres/DuckDB syntax.

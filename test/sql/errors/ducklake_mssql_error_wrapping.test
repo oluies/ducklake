@@ -1,0 +1,38 @@
+# name: test/sql/errors/ducklake_mssql_error_wrapping.test
+# description: US5 — FR-009 positive coverage: T-SQL errors are wrapped with DuckLake context but preserve the verbatim upstream message.
+# group: [errors]
+
+require ducklake
+
+require mssql
+
+require-env DUCKLAKE_MSSQL_CONNSTR
+
+statement ok
+ATTACH 'ducklake:mssql:${DUCKLAKE_MSSQL_CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}');
+
+statement ok
+USE lake;
+
+statement ok
+CREATE TABLE check_constraint_test(id BIGINT CHECK(id > 0));
+
+# Violating the check constraint should produce an error whose message contains:
+# (a) the verbatim SQL Server message snippet,
+# (b) the DuckLake operation name (mssql_exec / mssql_scan), and
+# (c) a snippet of the offending SQL.
+
+statement error
+INSERT INTO check_constraint_test VALUES (-1);
+----
+DuckLake (SQL Server backend)
+
+statement error
+INSERT INTO check_constraint_test VALUES (-1);
+----
+mssql_exec
+
+statement error
+INSERT INTO check_constraint_test VALUES (-1);
+----
+offending SQL
