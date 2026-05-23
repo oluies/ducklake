@@ -16,3 +16,10 @@ endif
 
 # Include the Makefile from extension-ci-tools
 include extension-ci-tools/makefiles/duckdb_extension.Makefile
+
+# SQL Server backend convenience targets (NFR-002: opt-in via ENABLE_MSSQL).
+.PHONY: test-mssql
+
+test-mssql:
+	@test -n "$$DUCKLAKE_MSSQL_CONNSTR" || { echo "DUCKLAKE_MSSQL_CONNSTR must be set (e.g. via docker/sqlserver/docker-compose.yml)"; exit 1; }
+	build/release/test/unittest --test-config test/configs/sqlserver.json --test-dir ./ "test/sql/*"

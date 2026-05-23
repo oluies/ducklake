@@ -1,0 +1,37 @@
+# name: test/sql/metadata/ducklake_v10_to_v11_migration_sqlserver.test
+# description: US1 scenario #3 — V1.0 catalog on SQL Server migrates to V1.1 when AUTOMATIC_MIGRATION TRUE.
+# group: [metadata]
+
+require ducklake
+
+require mssql
+
+require-env DUCKLAKE_MSSQL_CONNSTR
+
+# Seed the SQL Server database with a V1.0 catalog using the fixture.
+
+statement ok
+ATTACH '${DUCKLAKE_MSSQL_CONNSTR}' AS seed (TYPE mssql);
+
+statement ok
+CALL mssql_exec('seed', (SELECT string_agg(content, ';') FROM read_text('test/fixtures/ducklake_v10_sqlserver.sql')));
+
+statement ok
+DETACH seed;
+
+# Attach with AUTOMATIC_MIGRATION TRUE — should drive the catalog to V1.1 transparently.
+
+statement ok
+ATTACH 'ducklake:mssql:${DUCKLAKE_MSSQL_CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}', AUTOMATIC_MIGRATION TRUE);
+
+query T
+SELECT catalog_type FROM ducklake_settings('lake');
+----
+sqlserver
+
+# The snapshot row seeded by the V1.0 fixture must remain queryable post-migration.
+
+query I
+SELECT COUNT(*) FROM ducklake_snapshots('lake') WHERE snapshot_id = 0;
+----
+1
