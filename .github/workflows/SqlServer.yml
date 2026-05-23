@@ -1,25 +1,99 @@
 name: DBMS Catalog Tests — SQL Server (Linux)
-on: [push, pull_request, repository_dispatch]
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - 'specs/**'
+      - '**.md'
+      - 'CLAUDE.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'specs/**'
+      - '**.md'
+      - 'CLAUDE.md'
+  repository_dispatch:
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
   cancel-in-progress: true
+
 defaults:
   run:
     shell: bash
 
 jobs:
-  ducklake-mssql-tests:
-    name: DuckLake against SQL Server ${{ matrix.mssql_version }}
+  # Build once. Both SQL Server matrix legs (2019 + 2022) consume the same artifact,
+  # avoiding two cold builds per PR.
+  build:
+    name: Build DuckLake + mssql extension (Linux)
+    runs-on: ubuntu-latest
+    env:
+      VCPKG_TARGET_TRIPLET: x64-linux
+      GEN: Ninja
+      VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+      ENABLE_MSSQL: ON
+      BUILD_EXTENSION_TEST_DEPS: full
+      DUCKLAKE_CI: 1
+
+    steps:
+    - name: Install required ubuntu packages
+      run: |
+        sudo apt-get update -y -qq
+        sudo apt-get install -y -qq build-essential cmake ninja-build ccache python3 mold
+
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        submodules: 'true'
+
+    - name: Cache duckdb submodule checkout
+      uses: actions/cache@v4
+      with:
+        path: duckdb
+        key: duckdb-${{ runner.os }}-${{ hashFiles('.github/duckdb-version') }}
+
+    - name: Checkout DuckDB to version
+      run: |
+        cd duckdb
+        git checkout $(cat ../.github/duckdb-version)
+
+    - name: Setup Ccache
+      uses: hendrikmuhs/ccache-action@main
+      with:
+        key: ${{ github.job }}-mssql-linux
+        save: ${{ github.ref == 'refs/heads/main' || github.repository != 'duckdb/ducklake' }}
+
+    - name: Setup vcpkg
+      uses: lukka/run-vcpkg@v11.1
+      with:
+        vcpkgGitCommitId: 84bab45d415d22042bd0b9081aea57f362da3f35
+
+    - name: Build extension
+      env:
+        GEN: ninja
+      run: |
+        make release CMAKE_FLAGS="-DENABLE_MSSQL=ON"
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: mssql-build-linux
+        path: |
+          build/release/duckdb
+          build/release/test/unittest
+          build/release/extension/**/*.duckdb_extension
+          build/release/repository/**
+        retention-days: 1
+
+  test:
+    name: Test against SQL Server ${{ matrix.mssql_version }}
+    needs: build
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         mssql_version: ['2019', '2022']
-        arch: ['linux_amd64']
-        vcpkg_version: ['2023.04.15']
-        include:
-          - arch: 'linux_amd64'
-            vcpkg_triplet: 'x64-linux'
 
     services:
       mssql:
@@ -37,46 +111,23 @@ jobs:
           --health-retries 12
 
     env:
-      VCPKG_TARGET_TRIPLET: ${{ matrix.vcpkg_triplet }}
-      GEN: Ninja
-      VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
-      ENABLE_MSSQL: ON
-      BUILD_EXTENSION_TEST_DEPS: full
       DUCKLAKE_CI: 1
       DUCKLAKE_MSSQL_CONNSTR: "Server=localhost,1433;Database=ducklakedb;User Id=sa;Password=DuckLake!2026;TrustServerCertificate=true;"
 
     steps:
-    - name: Install required ubuntu packages
-      run: |
-        sudo apt-get update -y -qq
-        sudo apt-get install -y -qq build-essential cmake ninja-build ccache python3 mold
-
     - uses: actions/checkout@v3
       with:
-        fetch-depth: 0
-        submodules: 'true'
+        # Shallow — we need the tests + configs, not full history.
+        fetch-depth: 1
 
-    - name: Checkout DuckDB to version
-      run: |
-        cd duckdb
-        git checkout $(cat ../.github/duckdb-version)
-
-    - name: Setup Ccache
-      uses: hendrikmuhs/ccache-action@main
+    - name: Download build artifact
+      uses: actions/download-artifact@v4
       with:
-        key: ${{ github.job }}-${{ matrix.mssql_version }}
-        save: ${{ github.ref == 'refs/heads/main' || github.repository != 'duckdb/ducklake' }}
+        name: mssql-build-linux
+        path: build/release/
 
-    - name: Setup vcpkg
-      uses: lukka/run-vcpkg@v11.1
-      with:
-        vcpkgGitCommitId: 84bab45d415d22042bd0b9081aea57f362da3f35
-
-    - name: Build extension
-      env:
-        GEN: ninja
-      run: |
-        make release CMAKE_FLAGS="-DENABLE_MSSQL=ON"
+    - name: Restore unittest binary executable bit
+      run: chmod +x build/release/duckdb build/release/test/unittest
 
     - name: Wait for SQL Server
       run: |
@@ -91,8 +142,6 @@ jobs:
           /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'DuckLake!2026' -C -Q "CREATE DATABASE ducklakedb"
 
     - name: Test SQL Server
-      env:
-        DUCKDB_TPCH_ANSWERS_DIR: ${{ github.workspace }}/duckdb/extension/tpch/dbgen/answers
       run: |
         build/release/test/unittest --test-config test/configs/sqlserver.json --test-dir ./ "test/sql/*" | tee mssql-results.txt
 

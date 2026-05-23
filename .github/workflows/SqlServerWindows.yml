@@ -1,5 +1,19 @@
 name: DBMS Catalog Tests — SQL Server (Windows)
-on: [push, pull_request, repository_dispatch]
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - 'specs/**'
+      - '**.md'
+      - 'CLAUDE.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'specs/**'
+      - '**.md'
+      - 'CLAUDE.md'
+  repository_dispatch:
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
   cancel-in-progress: true
@@ -10,6 +24,8 @@ jobs:
     runs-on: windows-2022
 
     env:
+      VCPKG_TARGET_TRIPLET: x64-windows
+      VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
       ENABLE_MSSQL: ON
       DUCKLAKE_CI: 1
       MSSQL_SA_PASSWORD: "DuckLake!2026"
@@ -21,17 +37,18 @@ jobs:
         fetch-depth: 0
         submodules: 'true'
 
+    - name: Cache duckdb submodule checkout
+      uses: actions/cache@v4
+      with:
+        path: duckdb
+        key: duckdb-${{ runner.os }}-${{ hashFiles('.github/duckdb-version') }}
+
     - name: Install SQL Server 2022 via Chocolatey
       shell: pwsh
       run: |
-        # Quote SAPWD with embedded double-quotes (backtick-escaped) so passwords
-        # containing whitespace or shell-special characters don't break the SQL
-        # Server unattended installer's parameter parser.
         $params = "/IGNOREPENDINGREBOOT /SECURITYMODE=SQL /SAPWD=`"$($env:MSSQL_SA_PASSWORD)`" /TCPENABLED=1"
         choco install sql-server-2022 -y --params "$params"
-        # Start the named instance.
         Start-Service -Name MSSQLSERVER -ErrorAction SilentlyContinue
-        # Enable TCP/IP on default port 1433.
         Import-Module SqlServer -ErrorAction SilentlyContinue
 
     - name: Wait for SQL Server
@@ -56,6 +73,17 @@ jobs:
       run: |
         cd duckdb
         git checkout $(cat ../.github/duckdb-version)
+
+    - name: Setup Ccache
+      uses: hendrikmuhs/ccache-action@main
+      with:
+        key: ${{ github.job }}-mssql-windows
+        save: ${{ github.ref == 'refs/heads/main' || github.repository != 'duckdb/ducklake' }}
+
+    - name: Setup vcpkg
+      uses: lukka/run-vcpkg@v11.1
+      with:
+        vcpkgGitCommitId: 84bab45d415d22042bd0b9081aea57f362da3f35
 
     - name: Build extension
       shell: bash
