@@ -16,6 +16,9 @@ USE lake;
 statement ok
 CREATE TABLE t(id BIGINT, val VARCHAR);
 
+# The `||` concat below is evaluated DuckDB-side before the INSERT is dispatched to
+# the SQL Server catalog — DuckLake only sends literal values to mssql_exec, not the
+# expression. T-SQL's CONCAT/`+` is therefore not required here.
 statement ok
 INSERT INTO t SELECT i, 'row_' || i FROM range(10) t(i);
 

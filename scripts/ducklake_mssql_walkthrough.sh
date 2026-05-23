@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Narrated interactive walkthrough of the SQL Server-backed DuckLake catalog.
-# Pretty-prints every metadata-table dump at each step via `duckdb -box`.
+# Narrated walkthrough of the SQL Server-backed DuckLake catalog.
+# Builds a single SQL document with .print step markers and runs one `duckdb`
+# invocation — INSTALL/LOAD/ATTACH happens once, not per step.
 #
 # Usage:
-#   scripts/ducklake_mssql_walkthrough.sh           # interactive
-#   scripts/ducklake_mssql_walkthrough.sh --ci      # deterministic output for CI
+#   scripts/ducklake_mssql_walkthrough.sh           # interactive (-box output)
+#   scripts/ducklake_mssql_walkthrough.sh --ci      # deterministic CI output (-markdown)
 #
 # Pre-req: SQL Server reachable at DUCKLAKE_MSSQL_CONNSTR (or default localhost:1433).
 set -euo pipefail
@@ -17,72 +18,93 @@ fi
 CONNSTR="${DUCKLAKE_MSSQL_CONNSTR:-Server=localhost,1433;Database=ducklake_demo;User Id=sa;Password=DuckLake!2026;TrustServerCertificate=true;}"
 DATA_PATH="${DATA_PATH:-/tmp/ducklake-walkthrough}"
 DUCKDB="${DUCKDB:-duckdb}"
+DUCKDB_OUTPUT_FLAG="-box"
+if (( CI_MODE )); then
+  DUCKDB_OUTPUT_FLAG="-markdown"
+fi
 
 mkdir -p "${DATA_PATH}"
 
-step() {
-  if (( CI_MODE )); then
-    printf '\n=== %s ===\n' "$1"
-  else
-    printf '\n\033[1;36m=== %s ===\033[0m\n' "$1"
-  fi
-}
+# Metadata catalog tables to dump after each step (one mssql_scan per table).
+METADATA_TABLES=(
+  ducklake_snapshot ducklake_schema ducklake_table ducklake_column
+  ducklake_data_file ducklake_file_column_stats ducklake_tag ducklake_snapshot_changes
+)
 
-run_sql() {
-  local sql="$1"
-  if (( CI_MODE )); then
-    "${DUCKDB}" -markdown -bail -cmd "INSTALL ducklake; LOAD ducklake; INSTALL mssql FROM community; LOAD mssql; ATTACH 'ducklake:mssql:${CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}'); USE lake;" -c "${sql}"
-  else
-    "${DUCKDB}" -box -bail -cmd "INSTALL ducklake; LOAD ducklake; INSTALL mssql FROM community; LOAD mssql; ATTACH 'ducklake:mssql:${CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}'); USE lake;" -c "${sql}"
-  fi
-}
+# Build the full SQL document into a tmpfile.
+script_file="$(mktemp -t ducklake_mssql_walkthrough.XXXXXX.sql)"
+trap 'rm -f "${script_file}"' EXIT
 
-dump_metadata() {
+emit() { printf '%s\n' "$@" >> "${script_file}"; }
+
+dump_metadata_block() {
   local label="$1"
-  step "Metadata after: ${label}"
-  for tbl in ducklake_snapshot ducklake_schema ducklake_table ducklake_column ducklake_data_file ducklake_file_column_stats ducklake_tag ducklake_snapshot_changes; do
-    printf '\n-- %s --\n' "${tbl}"
-    run_sql "SELECT * FROM (SELECT * FROM mssql_scan('lake', 'SELECT * FROM dbo.${tbl}')) LIMIT 100;" || true
+  emit ".print"
+  emit ".print === Metadata after: ${label} ==="
+  for tbl in "${METADATA_TABLES[@]}"; do
+    emit ".print"
+    emit ".print -- ${tbl} --"
+    emit "SELECT * FROM mssql_scan('lake', 'SELECT * FROM dbo.${tbl}') LIMIT 100;"
   done
 }
 
-step "1. ATTACH"
-run_sql "SELECT catalog_type, data_path FROM ducklake_settings('lake');"
-dump_metadata "ATTACH"
+# One-time setup: INSTALL/LOAD and ATTACH happen exactly once.
+emit "INSTALL ducklake;"
+emit "LOAD ducklake;"
+emit "INSTALL mssql FROM community;"
+emit "LOAD mssql;"
+emit "ATTACH 'ducklake:mssql:${CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}');"
+emit "USE lake;"
 
-step "2. CREATE SCHEMA + TABLES"
-run_sql "CREATE SCHEMA IF NOT EXISTS sales;
-         CREATE TABLE IF NOT EXISTS sales.orders(id BIGINT, customer VARCHAR, amount DECIMAL(10,2), placed_at VARCHAR);
-         CREATE TABLE IF NOT EXISTS sales.order_items(order_id BIGINT, sku VARCHAR, qty INTEGER);"
-dump_metadata "CREATE SCHEMA + TABLES"
+emit ".print"
+emit ".print === 1. ATTACH ==="
+emit "SELECT catalog_type, data_path FROM ducklake_settings('lake');"
+dump_metadata_block "ATTACH"
 
-step "3. INSERT (snapshot S1)"
-run_sql "INSERT INTO sales.orders VALUES (1, 'alice', 19.99, '2026-01-01T10:00:00Z'), (2, 'bob', 42.00, '2026-01-01T11:30:00Z');
-         INSERT INTO sales.order_items VALUES (1, 'sku-a', 1), (1, 'sku-b', 2), (2, 'sku-c', 1);"
-dump_metadata "INSERT S1"
+emit ".print"
+emit ".print === 2. CREATE SCHEMA + TABLES ==="
+emit "CREATE SCHEMA IF NOT EXISTS sales;"
+emit "CREATE TABLE IF NOT EXISTS sales.orders(id BIGINT, customer VARCHAR, amount DECIMAL(10,2), placed_at VARCHAR);"
+emit "CREATE TABLE IF NOT EXISTS sales.order_items(order_id BIGINT, sku VARCHAR, qty INTEGER);"
+dump_metadata_block "CREATE SCHEMA + TABLES"
 
-step "4. UPDATE + INSERT (snapshot S2)"
-run_sql "UPDATE sales.orders SET amount = 24.99 WHERE id = 1;
-         INSERT INTO sales.orders VALUES (3, 'carol', 99.50, '2026-01-02T09:00:00Z');"
-dump_metadata "UPDATE + INSERT S2"
+emit ".print"
+emit ".print === 3. INSERT (snapshot S1) ==="
+emit "INSERT INTO sales.orders VALUES (1, 'alice', 19.99, '2026-01-01T10:00:00Z'), (2, 'bob', 42.00, '2026-01-01T11:30:00Z');"
+emit "INSERT INTO sales.order_items VALUES (1, 'sku-a', 1), (1, 'sku-b', 2), (2, 'sku-c', 1);"
+dump_metadata_block "INSERT S1"
 
-step "5. DELETE (snapshot S3)"
-run_sql "DELETE FROM sales.orders WHERE id = 2;"
-dump_metadata "DELETE S3"
+emit ".print"
+emit ".print === 4. UPDATE + INSERT (snapshot S2) ==="
+emit "UPDATE sales.orders SET amount = 24.99 WHERE id = 1;"
+emit "INSERT INTO sales.orders VALUES (3, 'carol', 99.50, '2026-01-02T09:00:00Z');"
+dump_metadata_block "UPDATE + INSERT S2"
 
-step "6. Time-travel back to S1"
-run_sql "WITH s1 AS (
-           SELECT snapshot_id FROM ducklake_snapshots('lake')
-           ORDER BY snapshot_id DESC OFFSET 2 ROWS FETCH NEXT 1 ROWS ONLY
-         )
-         SELECT * FROM sales.orders AT (SNAPSHOT => (SELECT snapshot_id FROM s1)) ORDER BY id;"
+emit ".print"
+emit ".print === 5. DELETE (snapshot S3) ==="
+emit "DELETE FROM sales.orders WHERE id = 2;"
+dump_metadata_block "DELETE S3"
 
-step "7. Compaction"
-run_sql "CALL ducklake_merge_adjacent_files('lake');"
-dump_metadata "After compaction"
+emit ".print"
+emit ".print === 6. Time-travel back to S1 ==="
+emit "WITH s1 AS ("
+emit "  SELECT snapshot_id FROM ducklake_snapshots('lake')"
+emit "  ORDER BY snapshot_id DESC OFFSET 2 ROWS FETCH NEXT 1 ROWS ONLY"
+emit ")"
+emit "SELECT * FROM sales.orders AT (SNAPSHOT => (SELECT snapshot_id FROM s1)) ORDER BY id;"
 
-step "8. Expire S1"
-run_sql "CALL ducklake_expire_snapshots('lake', versions => 2);"
-dump_metadata "After expire"
+emit ".print"
+emit ".print === 7. Compaction ==="
+emit "CALL ducklake_merge_adjacent_files('lake');"
+dump_metadata_block "After compaction"
 
-step "Done"
+emit ".print"
+emit ".print === 8. Expire S1 ==="
+emit "CALL ducklake_expire_snapshots('lake', versions => 2);"
+dump_metadata_block "After expire"
+
+emit ".print"
+emit ".print === Done ==="
+
+# Single duckdb invocation.
+"${DUCKDB}" "${DUCKDB_OUTPUT_FLAG}" -bail -f "${script_file}"

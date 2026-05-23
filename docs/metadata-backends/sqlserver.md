@@ -40,17 +40,10 @@ make release CMAKE_FLAGS="-DENABLE_MSSQL=ON"
 
 ## Type mapping
 
-See [`data-model.md`](../../specs/001-mssql-metadata-backend/data-model.md#type-mapping).
+Full table in [`data-model.md`](../../specs/001-mssql-metadata-backend/data-model.md#type-mapping). Two SQL-Server-specific notes that affect users:
 
-Highlights:
-- `BOOLEAN` → `BIT`
-- `INTEGER` → `INT`
-- `DOUBLE` → `FLOAT`
-- `VARCHAR` → `NVARCHAR(MAX)` (unlike Postgres — SQL Server can store null bytes)
-- `BLOB` → `VARBINARY(MAX)`
-- `UUID` → `UNIQUEIDENTIFIER`
-- Timestamp / unsigned / 128-bit types → `NVARCHAR(40)` (parity with the Postgres backend)
-- `STRUCT` / `MAP` / `LIST` / `VARIANT` / `GEOMETRY` → not natively supported; DuckLake stores them in Parquet, not in metadata columns.
+- **`VARCHAR` is natively supported** (unlike the Postgres backend, which serializes via `BYTEA` because Postgres can't store null bytes in `TEXT`).
+- **Composite/unsigned/128-bit types** (`STRUCT`, `MAP`, `LIST`, `VARIANT`, `GEOMETRY`, `UBIGINT`, `HUGEINT`, `UHUGEINT`) are **not** supported as catalog column types — DuckLake stores them in Parquet for data and serializes timestamps as `NVARCHAR(40)` for metadata parity with the Postgres backend.
 
 ## Identifier safety
 

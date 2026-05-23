@@ -7,6 +7,6 @@ require ducklake
 # Intentionally do NOT load mssql in this test.
 
 statement error
-ATTACH 'ducklake:mssql:Server=localhost,1433;Database=ducklakedb;User Id=sa;Password=DuckLake!2026;TrustServerCertificate=true;' AS lake (DATA_PATH '${DATA_PATH}');
+ATTACH 'ducklake:mssql:Server=localhost,1433;Database=ducklakedb;User Id=sa;Password=DuckLake!2026;TrustServerCertificate=true;' AS lake (DATA_PATH '{DATA_PATH}');
 ----
 INSTALL mssql FROM community
