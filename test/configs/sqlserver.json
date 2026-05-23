@@ -14,6 +14,10 @@
     {
       "env_name": "DUCKLAKE_CONNECTION",
       "env_value": "mssql:Server=localhost,1433;Database=ducklakedb;User Id=sa;Password=DuckLake!2026;TrustServerCertificate=true;"
+    },
+    {
+      "env_name": "MSSQL_CONNSTR",
+      "env_value": "Server=localhost,1433;Database=ducklakedb;User Id=sa;Password=DuckLake!2026;TrustServerCertificate=true;"
     }
   ],
   "skip_tests": [

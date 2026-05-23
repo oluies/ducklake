@@ -6,10 +6,9 @@ require ducklake
 
 require mssql
 
-require-env DUCKLAKE_MSSQL_CONNSTR
 
 statement ok
-ATTACH 'ducklake:mssql:${DUCKLAKE_MSSQL_CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}');
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS lake (DATA_PATH '{DATA_PATH}');
 
 statement ok
 USE lake;
@@ -27,19 +26,19 @@ statement ok
 CREATE TEMP TABLE spid_log(step VARCHAR, spid INT);
 
 statement ok
-INSERT INTO spid_log SELECT 's1', spid FROM (SELECT * FROM mssql_scan(lake.__metadata_db__(), 'SELECT @@SPID AS spid')) sub;
+INSERT INTO spid_log SELECT 's1', spid FROM (SELECT * FROM mssql_scan('__ducklake_metadata_lake', 'SELECT @@SPID AS spid')) sub;
 
 statement ok
 INSERT INTO pin_check VALUES (1, 'a'), (2, 'b');
 
 statement ok
-INSERT INTO spid_log SELECT 's2', spid FROM (SELECT * FROM mssql_scan(lake.__metadata_db__(), 'SELECT @@SPID AS spid')) sub;
+INSERT INTO spid_log SELECT 's2', spid FROM (SELECT * FROM mssql_scan('__ducklake_metadata_lake', 'SELECT @@SPID AS spid')) sub;
 
 statement ok
 INSERT INTO pin_check VALUES (3, 'c');
 
 statement ok
-INSERT INTO spid_log SELECT 's3', spid FROM (SELECT * FROM mssql_scan(lake.__metadata_db__(), 'SELECT @@SPID AS spid')) sub;
+INSERT INTO spid_log SELECT 's3', spid FROM (SELECT * FROM mssql_scan('__ducklake_metadata_lake', 'SELECT @@SPID AS spid')) sub;
 
 query I
 SELECT COUNT(DISTINCT spid) FROM spid_log;

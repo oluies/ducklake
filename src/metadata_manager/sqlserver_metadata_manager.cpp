@@ -133,17 +133,16 @@ string SQLServerMetadataManager::SubstituteTemplateVariables(DuckLakeSnapshot sn
 	return query;
 }
 
-// FR-009 — on dispatch failure, throw a wrapped exception that prepends DuckLake context (op
-// name + offending-SQL snippet) and preserves the verbatim upstream SQL Server message via
-// ErrorData::Throw's prefix mechanism.
-static unique_ptr<QueryResult> WrapDispatchResult(unique_ptr<QueryResult> result, const string &op,
-                                                  const string &sql) {
+// FR-009 — on dispatch failure, throw an exception that prepends DuckLake context (op name +
+// offending-SQL snippet) while preserving the verbatim upstream SQL Server message via
+// ErrorData::Throw's prefix mechanism. On success, returns the result unchanged.
+static unique_ptr<QueryResult> ThrowIfDispatchError(unique_ptr<QueryResult> result, const string &op,
+                                                    const string &sql) {
 	if (result && result->HasError()) {
 		string snippet = sql.length() > 1024 ? sql.substr(0, 1024) + "…" : sql;
-		string prefix =
-		    StringUtil::Format("DuckLake (SQL Server backend) mssql_%s failed (offending SQL: %s): ",
-		                       op, snippet);
-		result->GetErrorObject().Throw(prefix);
+		string prefix = StringUtil::Format(
+		    "DuckLake (SQL Server backend) mssql_%s failed (offending SQL: %s): ", op, snippet);
+		result->GetErrorObject().Throw(prefix); // [[noreturn]]
 	}
 	return result;
 }
@@ -151,51 +150,91 @@ static unique_ptr<QueryResult> WrapDispatchResult(unique_ptr<QueryResult> result
 unique_ptr<QueryResult> SQLServerMetadataManager::RunMssqlExec(const string &catalog_literal, const string &sql) {
 	auto &connection = transaction.GetConnection();
 	auto result = connection.Query(StringUtil::Format("CALL mssql_exec(%s, %s)", catalog_literal, SQLString(sql)));
-	return WrapDispatchResult(std::move(result), "mssql_exec", sql);
+	return ThrowIfDispatchError(std::move(result), "mssql_exec", sql);
 }
 
 unique_ptr<QueryResult> SQLServerMetadataManager::RunMssqlScan(const string &catalog_literal, const string &sql) {
 	auto &connection = transaction.GetConnection();
 	auto result = connection.Query(
 	    StringUtil::Format("SELECT * FROM mssql_scan(%s, %s)", catalog_literal, SQLString(sql)));
-	return WrapDispatchResult(std::move(result), "mssql_scan", sql);
+	return ThrowIfDispatchError(std::move(result), "mssql_scan", sql);
+}
+
+// Strip surrounding double-quote identifier delimiters from a single ident.
+//   "dbo"  -> dbo
+//   dbo    -> dbo
+static string StripIdentQuotes(const string &s) {
+	if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+		return s.substr(1, s.size() - 2);
+	}
+	return s;
+}
+
+// Build the OBJECT_ID argument for a possibly schema-qualified, possibly-quoted name.
+//   "dbo".ducklake_snapshot   -> dbo.ducklake_snapshot
+//   ducklake_snapshot          -> ducklake_snapshot
+//   "my schema"."my table"     -> my schema.my table   (T-SQL accepts both quoted and bare forms;
+//                                                       OBJECT_ID's N'...' argument is the bare name)
+static string BuildObjectIdLiteral(const string &qualified) {
+	// Find a dot that is not inside double-quotes.
+	bool in_quotes = false;
+	idx_t dot = string::npos;
+	for (idx_t i = 0; i < qualified.size(); i++) {
+		if (qualified[i] == '"') {
+			in_quotes = !in_quotes;
+		} else if (qualified[i] == '.' && !in_quotes) {
+			dot = i;
+			break;
+		}
+	}
+	if (dot == string::npos) {
+		return StripIdentQuotes(qualified);
+	}
+	return StripIdentQuotes(qualified.substr(0, dot)) + "." + StripIdentQuotes(qualified.substr(dot + 1));
 }
 
 // Minimal T-SQL rewrites for base-class SQL that uses Postgres/DuckDB syntax.
 // Each rewrite is conservative — only the cases we know the base class emits.
+// Caveat: substring matching does not understand SQL string literals or comments;
+// fine for the base-class emitter today, but a footgun if a literal ever contains
+// the matched phrases.
 // Full dialect coverage emerges from running the SQLLogicTest suite and triaging
 // failures (Phase 8 stabilization, tasks.md T043).
 static string RewriteForTSQL(string sql) {
-	// CREATE TABLE IF NOT EXISTS X(...) -> IF OBJECT_ID(N'X', N'U') IS NULL CREATE TABLE X(...)
-	// We use a placeholder marker that DuckLake's template-var pass will have already filled.
+	// CREATE TABLE IF NOT EXISTS [schema.]table(...) ->
+	//   IF OBJECT_ID(N'schema.table', N'U') IS NULL CREATE TABLE [schema.]table(...)
 	{
 		const string needle = "CREATE TABLE IF NOT EXISTS ";
-		size_t pos = 0;
+		idx_t pos = 0;
 		while ((pos = sql.find(needle, pos)) != string::npos) {
-			size_t name_start = pos + needle.size();
-			size_t name_end = sql.find_first_of(" (", name_start);
+			idx_t name_start = pos + needle.size();
+			idx_t name_end = sql.find_first_of(" (", name_start);
 			if (name_end == string::npos) {
 				break;
 			}
-			string name = sql.substr(name_start, name_end - name_start);
-			string replacement = "IF OBJECT_ID(N'" + name + "', N'U') IS NULL CREATE TABLE " + name;
+			string captured = sql.substr(name_start, name_end - name_start);
+			string object_id_literal = BuildObjectIdLiteral(captured);
+			string replacement =
+			    "IF OBJECT_ID(N'" + object_id_literal + "', N'U') IS NULL CREATE TABLE " + captured;
 			sql.replace(pos, name_end - pos, replacement);
 			pos += replacement.size();
 		}
 	}
-	// CREATE SCHEMA IF NOT EXISTS X -> IF SCHEMA_ID(N'X') IS NULL EXEC('CREATE SCHEMA [X]')
+	// CREATE SCHEMA IF NOT EXISTS [schema] ->
+	//   IF SCHEMA_ID(N'schema') IS NULL EXEC('CREATE SCHEMA [schema]')
 	{
 		const string needle = "CREATE SCHEMA IF NOT EXISTS ";
-		size_t pos = 0;
+		idx_t pos = 0;
 		while ((pos = sql.find(needle, pos)) != string::npos) {
-			size_t name_start = pos + needle.size();
-			size_t name_end = sql.find_first_of(" ;\n", name_start);
+			idx_t name_start = pos + needle.size();
+			idx_t name_end = sql.find_first_of(" ;\n", name_start);
 			if (name_end == string::npos) {
 				break;
 			}
-			string name = sql.substr(name_start, name_end - name_start);
+			string captured = sql.substr(name_start, name_end - name_start);
+			string bare = StripIdentQuotes(captured);
 			string replacement =
-			    "IF SCHEMA_ID(N'" + name + "') IS NULL EXEC('CREATE SCHEMA [" + name + "]')";
+			    "IF SCHEMA_ID(N'" + bare + "') IS NULL EXEC('CREATE SCHEMA [" + bare + "]')";
 			sql.replace(pos, name_end - pos, replacement);
 			pos += replacement.size();
 		}

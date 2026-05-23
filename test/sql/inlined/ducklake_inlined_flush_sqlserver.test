@@ -6,10 +6,9 @@ require ducklake
 
 require mssql
 
-require-env DUCKLAKE_MSSQL_CONNSTR
 
 statement ok
-ATTACH 'ducklake:mssql:${DUCKLAKE_MSSQL_CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}', INLINING_ROW_THRESHOLD 3);
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS lake (DATA_PATH '{DATA_PATH}', INLINING_ROW_THRESHOLD 3);
 
 statement ok
 USE lake;

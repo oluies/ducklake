@@ -6,10 +6,9 @@ require ducklake
 
 require mssql
 
-require-env DUCKLAKE_MSSQL_CONNSTR
 
 statement ok
-ATTACH 'ducklake:mssql:${DUCKLAKE_MSSQL_CONNSTR}' AS lake_a (DATA_PATH '${DATA_PATH}');
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS lake_a (DATA_PATH '{DATA_PATH}');
 
 query T
 SELECT catalog_type FROM ducklake_settings('lake_a');
@@ -17,7 +16,7 @@ SELECT catalog_type FROM ducklake_settings('lake_a');
 sqlserver
 
 statement ok
-ATTACH 'ducklake:sqlserver:${DUCKLAKE_MSSQL_CONNSTR}' AS lake_b (DATA_PATH '${DATA_PATH}');
+ATTACH 'ducklake:sqlserver:{MSSQL_CONNSTR}' AS lake_b (DATA_PATH '{DATA_PATH}');
 
 query T
 SELECT catalog_type FROM ducklake_settings('lake_b');

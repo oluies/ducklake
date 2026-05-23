@@ -6,15 +6,32 @@ require ducklake
 
 require mssql
 
-require-env DUCKLAKE_MSSQL_CONNSTR
 
-# Seed the SQL Server database with a V1.0 catalog using the fixture.
+# Seed the SQL Server database with a V1.0 catalog one statement at a time.
+# mssql_exec runs ONE T-SQL statement per call (no GO, no multi-statement batches);
+# the fixture file at test/fixtures/ducklake_v10_sqlserver.sql is the human-friendly
+# version of the same seed, applied via `sqlcmd -i`.
 
 statement ok
-ATTACH '${DUCKLAKE_MSSQL_CONNSTR}' AS seed (TYPE mssql);
+ATTACH '{MSSQL_CONNSTR}' AS seed (TYPE mssql);
 
 statement ok
-CALL mssql_exec('seed', (SELECT string_agg(content, ';') FROM read_text('test/fixtures/ducklake_v10_sqlserver.sql')));
+CALL mssql_exec('seed', 'IF OBJECT_ID(N''dbo.ducklake_metadata'', N''U'') IS NULL CREATE TABLE dbo.ducklake_metadata ([key] NVARCHAR(64) NOT NULL, [value] NVARCHAR(MAX) NOT NULL)');
+
+statement ok
+CALL mssql_exec('seed', 'IF OBJECT_ID(N''dbo.ducklake_snapshot'', N''U'') IS NULL CREATE TABLE dbo.ducklake_snapshot (snapshot_id BIGINT NOT NULL PRIMARY KEY, snapshot_time NVARCHAR(40) NOT NULL, schema_version BIGINT NOT NULL, next_catalog_id BIGINT NOT NULL, next_file_id BIGINT NOT NULL)');
+
+statement ok
+CALL mssql_exec('seed', 'DELETE FROM dbo.ducklake_metadata');
+
+statement ok
+CALL mssql_exec('seed', 'INSERT INTO dbo.ducklake_metadata ([key], [value]) VALUES (N''version'', N''0.1''), (N''created_by'', N''DuckLake-V10-fixture''), (N''data_path'', N''memory://ducklake/data/''), (N''encrypted'', N''false'')');
+
+statement ok
+CALL mssql_exec('seed', 'DELETE FROM dbo.ducklake_snapshot');
+
+statement ok
+CALL mssql_exec('seed', 'INSERT INTO dbo.ducklake_snapshot VALUES (0, N''2026-01-01T00:00:00Z'', 0, 1, 0)');
 
 statement ok
 DETACH seed;
@@ -22,7 +39,7 @@ DETACH seed;
 # Attach with AUTOMATIC_MIGRATION TRUE — should drive the catalog to V1.1 transparently.
 
 statement ok
-ATTACH 'ducklake:mssql:${DUCKLAKE_MSSQL_CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}', AUTOMATIC_MIGRATION TRUE);
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS lake (DATA_PATH '{DATA_PATH}', AUTOMATIC_MIGRATION TRUE);
 
 query T
 SELECT catalog_type FROM ducklake_settings('lake');

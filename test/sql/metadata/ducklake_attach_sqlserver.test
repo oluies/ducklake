@@ -6,10 +6,9 @@ require ducklake
 
 require mssql
 
-require-env DUCKLAKE_MSSQL_CONNSTR
 
 statement ok
-ATTACH 'ducklake:mssql:${DUCKLAKE_MSSQL_CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}');
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS lake (DATA_PATH '{DATA_PATH}');
 
 statement ok
 USE lake;
@@ -25,7 +24,7 @@ statement ok
 DETACH lake;
 
 statement ok
-ATTACH 'ducklake:mssql:${DUCKLAKE_MSSQL_CONNSTR}' AS lake (DATA_PATH '${DATA_PATH}');
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS lake (DATA_PATH '{DATA_PATH}');
 
 query I
 SELECT COUNT(*) FROM information_schema.tables WHERE table_catalog = 'lake';
