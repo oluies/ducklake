@@ -1,0 +1,100 @@
+name: DBMS Catalog Tests — SQL Server (Windows)
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - 'specs/**'
+      - '**.md'
+      - 'CLAUDE.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'specs/**'
+      - '**.md'
+      - 'CLAUDE.md'
+  repository_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  ducklake-mssql-windows:
+    name: DuckLake against SQL Server 2022 (windows-2022)
+    runs-on: windows-2022
+
+    env:
+      VCPKG_TARGET_TRIPLET: x64-windows
+      VCPKG_TOOLCHAIN_PATH: ${{ github.workspace }}/vcpkg/scripts/buildsystems/vcpkg.cmake
+      BUILD_EXTENSION_TEST_DEPS: full
+      GEN: Ninja
+      ENABLE_MSSQL: ON
+      DUCKLAKE_CI: 1
+      MSSQL_SA_PASSWORD: "DuckLake!2026"
+      DUCKLAKE_MSSQL_CONNSTR: "Server=localhost,1433;Database=ducklakedb;User Id=sa;Password=DuckLake!2026;TrustServerCertificate=true;"
+
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        submodules: 'true'
+
+    - name: Cache duckdb submodule checkout
+      uses: actions/cache@v4
+      with:
+        path: duckdb
+        key: duckdb-${{ runner.os }}-${{ hashFiles('.github/duckdb-version') }}
+
+    - name: Install SQL Server 2022 via Chocolatey
+      shell: pwsh
+      run: |
+        $params = "/IGNOREPENDINGREBOOT /SECURITYMODE=SQL /SAPWD=`"$($env:MSSQL_SA_PASSWORD)`" /TCPENABLED=1"
+        choco install sql-server-2022 -y --params "$params"
+        Start-Service -Name MSSQLSERVER -ErrorAction SilentlyContinue
+        Import-Module SqlServer -ErrorAction SilentlyContinue
+
+    - name: Wait for SQL Server
+      shell: pwsh
+      run: |
+        for ($i = 0; $i -lt 30; $i++) {
+          try {
+            sqlcmd -S localhost -U sa -P "$($env:MSSQL_SA_PASSWORD)" -Q "SELECT 1" -b
+            break
+          } catch {
+            Start-Sleep -Seconds 2
+          }
+        }
+
+    - name: Create ducklakedb database
+      shell: pwsh
+      run: |
+        sqlcmd -S localhost -U sa -P "$($env:MSSQL_SA_PASSWORD)" -Q "CREATE DATABASE ducklakedb"
+
+    - name: Checkout DuckDB to version
+      shell: bash
+      run: |
+        cd duckdb
+        git checkout $(cat ../.github/duckdb-version)
+
+    - name: Setup Ccache
+      uses: hendrikmuhs/ccache-action@main
+      with:
+        key: ${{ github.job }}-mssql-windows
+        save: ${{ github.ref == 'refs/heads/main' || github.repository != 'duckdb/ducklake' }}
+
+    - name: Setup vcpkg
+      uses: lukka/run-vcpkg@v11.1
+      with:
+        vcpkgGitCommitId: 84bab45d415d22042bd0b9081aea57f362da3f35
+
+    - name: Build extension
+      shell: bash
+      run: |
+        make release CMAKE_FLAGS="-DENABLE_MSSQL=ON"
+
+    - name: Test SQL Server
+      shell: bash
+      env:
+        DUCKDB_TPCH_ANSWERS_DIR: ${{ github.workspace }}/duckdb/extension/tpch/dbgen/answers
+      run: |
+        build/release/test/unittest --test-config test/configs/sqlserver.json --test-dir ./ "test/sql/*"

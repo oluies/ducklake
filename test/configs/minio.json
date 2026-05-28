@@ -1,26 +1,31 @@
 {
   "description": "Run DuckLake tests using MinIO.",
   "on_init": "CREATE SECRET (TYPE S3, KEY_ID 'admin', SECRET 'password', ENDPOINT '127.0.0.1:9000', URL_STYLE 'path', USE_SSL 0);",
-  "test_env": [{
-      "env_name":  "DATA_PATH",
+  "test_env": [
+    {
+      "env_name": "DATA_PATH",
       "env_value": "s3://mybucket"
-   }],
-  "skip_error_messages": ["this_is_not_allowed_to_be_empty"],
+    }
+  ],
+  "skip_error_messages": [
+    "this_is_not_allowed_to_be_empty"
+  ],
   "statically_loaded_extensions": [
     "core_functions",
     "parquet",
     "icu",
     "httpfs",
     "json"
-  ],   "skip_tests": [
-   {
+  ],
+  "skip_tests": [
+    {
       "reason": "Extension Loading tests, not relevant to remote files.",
       "paths": [
         "test/sql/general/missing_parquet.test",
         "test/sql/autoloading/autoload_data_path.test"
       ]
     },
-  {
+    {
       "reason": "Test with a hardcoded file path.",
       "paths": [
         "test/sql/add_files/add_old_list.test",
@@ -37,6 +42,26 @@
       "reason": "Tests ObjectCache eviction under a tight memory_limit; S3 multipart upload part buffers (~80MB each) exceed the memory_limit required for the eviction scenario.",
       "paths": [
         "test/sql/insert/insert_wide_table_low_memory.test_slow"
+      ]
+    },
+    {
+      "reason": "MSSQL backend tests \u2014 require sqlserver.json config (test/configs/sqlserver.json)",
+      "paths": [
+        "test/sql/metadata/ducklake_attach_sqlserver.test",
+        "test/sql/metadata/ducklake_settings_sqlserver.test",
+        "test/sql/metadata/ducklake_mssql_txn_pinning.test",
+        "test/sql/metadata/ducklake_v10_to_v11_migration_sqlserver.test",
+        "test/sql/dml/ducklake_dml_sqlserver.test",
+        "test/sql/snapshots/ducklake_time_travel_sqlserver.test",
+        "test/sql/concurrency/ducklake_concurrent_commits_sqlserver.test",
+        "test/sql/errors/ducklake_identifier_length_sqlserver.test",
+        "test/sql/errors/ducklake_mssql_missing_extension.test",
+        "test/sql/errors/ducklake_mssql_bad_credentials.test",
+        "test/sql/errors/ducklake_mssql_error_wrapping.test",
+        "test/sql/maintenance/ducklake_expire_snapshots_sqlserver.test",
+        "test/sql/maintenance/ducklake_compaction_sqlserver.test",
+        "test/sql/inlined/ducklake_inlined_flush_sqlserver.test",
+        "test/sql/walkthrough/ducklake_mssql_orders_walkthrough.test"
       ]
     }
   ]

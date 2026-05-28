@@ -14,6 +14,9 @@
 #include "duckdb/main/appender.hpp"
 #include "metadata_manager/postgres_metadata_manager.hpp"
 #include "metadata_manager/sqlite_metadata_manager.hpp"
+#ifdef DUCKLAKE_ENABLE_MSSQL
+#include "metadata_manager/sqlserver_metadata_manager.hpp"
+#endif
 #include "duckdb/main/attached_database.hpp"
 #include "duckdb/main/database.hpp"
 #include "duckdb/planner/expression.hpp"
@@ -41,7 +44,12 @@ unordered_map<string /* name */, DuckLakeMetadataManager::create_t> DuckLakeMeta
     {"postgres", PostgresMetadataManager::Create},
     {"postgres_scanner", PostgresMetadataManager::Create},
     {"sqlite", SQLiteMetadataManager::Create},
-    {"sqlite_scanner", SQLiteMetadataManager::Create}};
+    {"sqlite_scanner", SQLiteMetadataManager::Create},
+#ifdef DUCKLAKE_ENABLE_MSSQL
+    {"mssql", SQLServerMetadataManager::Create},
+    {"sqlserver", SQLServerMetadataManager::Create},
+#endif
+};
 
 mutex DuckLakeMetadataManager::metadata_managers_lock;
 

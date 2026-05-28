@@ -14,6 +14,9 @@
 #include "metadata_manager/ducklake_metadata_manager_v1_1.hpp"
 #include "metadata_manager/sqlite_metadata_manager.hpp"
 #include "metadata_manager/postgres_metadata_manager.hpp"
+#ifdef DUCKLAKE_ENABLE_MSSQL
+#include "metadata_manager/sqlserver_metadata_manager.hpp"
+#endif
 
 namespace duckdb {
 
@@ -294,6 +297,10 @@ void DuckLakeInitializer::SetVersionedMetadataManager(DuckLakeTransaction &trans
 			new_manager = make_uniq<DuckLakeMetadataManagerV1_1<PostgresMetadataManager>>(transaction);
 		} else if (dynamic_cast<SQLiteMetadataManager *>(&current)) {
 			new_manager = make_uniq<DuckLakeMetadataManagerV1_1<SQLiteMetadataManager>>(transaction);
+#ifdef DUCKLAKE_ENABLE_MSSQL
+		} else if (dynamic_cast<SQLServerMetadataManager *>(&current)) {
+			new_manager = make_uniq<DuckLakeMetadataManagerV1_1<SQLServerMetadataManager>>(transaction);
+#endif
 		} else {
 			new_manager = make_uniq<DuckLakeMetadataManagerV1_1<DuckLakeMetadataManager>>(transaction);
 		}

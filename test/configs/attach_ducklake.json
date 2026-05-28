@@ -172,7 +172,7 @@
       ]
     },
     {
-      "reason": "FIXME: flaky in CI — concurrent ALTER ADD COLUMN with reads sometimes aborts the writer's transaction or segfaults under DuckLake",
+      "reason": "FIXME: flaky in CI \u2014 concurrent ALTER ADD COLUMN with reads sometimes aborts the writer's transaction or segfaults under DuckLake",
       "paths": [
         "test/sql/parallelism/interquery/concurrent_reads_while_altering.test"
       ]
@@ -395,7 +395,6 @@
         "test/sql/function/list/list_value_nested_lists.test"
       ]
     },
-
     {
       "reason": "FIXME: BUGS? Weird behavior around hugeint",
       "paths": [
@@ -519,25 +518,25 @@
       "reason": "Prepared statement differs from original result!",
       "paths": [
         "test/sql/function/generic/test_connection_count.test"
-        ]
+      ]
     },
-     {
+    {
       "reason": "FIXME: DuckTransaction::Get called on non-DuckDB transaction",
       "paths": [
         "test/sql/function/timestamp/test_icu_makedate.test"
-        ]
+      ]
     },
     {
       "reason": "FIXME: Macros are currently not taken in for recursion",
       "paths": [
         "test/sql/catalog/function/test_recursive_macro.test"
-        ]
+      ]
     },
     {
       "reason": " Failed to parse DuckLake type - unsupported nested type",
       "paths": [
         "test/sql/catalog/function/test_macro_issue_13104.test"
-        ]
+      ]
     },
     {
       "reason": "Expected different behavior between duckdb and ducklake wrt macros. Notice these are not ducklake bugs just tests that do not fit.",
@@ -545,7 +544,7 @@
         "test/sql/catalog/function/test_table_macro_copy.test",
         "test/sql/catalog/function/test_macro_type_overloads.test",
         "test/sql/pragma/test_table_info.test"
-        ]
+      ]
     },
     {
       "reason": "Checkpoint in DuckLake doesn't produce expected result. Notice these are not ducklake bugs just tests that do not fit.",
@@ -603,53 +602,53 @@
     {
       "reason": "PARTITIONED BY is not supported for tables in a ducklake catalog",
       "paths": [
-          "test/sql/create/create_table_extra_options.test"
+        "test/sql/create/create_table_extra_options.test"
       ]
     },
     {
       "reason": "Different results",
       "paths": [
-          "test/sql/attach/show_schemas.test"
+        "test/sql/attach/show_schemas.test"
       ]
     },
     {
       "reason": "FIXME: CI Deadlock?",
       "paths": [
-          "test/sql/update/test_stress_update_issue_19688.test"
+        "test/sql/update/test_stress_update_issue_19688.test"
       ]
     },
     {
       "reason": "FIXME: Internal error",
       "paths": [
-          "test/sql/copy/csv/test_copy_null.test"
+        "test/sql/copy/csv/test_copy_null.test"
       ]
     },
     {
       "reason": "Unsupported variant type in Parquet",
       "paths": [
-          "test/sql/function/variant/variant_typeof.test",
-          "test/sql/storage/types/variant/test_all_types_single_object.test",
-          "test/sql/storage/types/variant/struct_of_variant.test",
-          "test/sql/storage/types/variant/test_all_types_single_table.test",
-          "test/sql/storage/types/variant/test_all_types.test",
-          "test/sql/storage/types/variant/test_all_types_variant.test"
+        "test/sql/function/variant/variant_typeof.test",
+        "test/sql/storage/types/variant/test_all_types_single_object.test",
+        "test/sql/storage/types/variant/struct_of_variant.test",
+        "test/sql/storage/types/variant/test_all_types_single_table.test",
+        "test/sql/storage/types/variant/test_all_types.test",
+        "test/sql/storage/types/variant/test_all_types_variant.test"
       ]
     },
     {
       "reason": "Variant shredding stats are different between Parquet <> DuckDB",
       "paths": [
-          "test/sql/storage/types/variant/variant_extract_stats.test"
+        "test/sql/storage/types/variant/variant_extract_stats.test"
       ]
     },
     {
-        "reason": "FIXME: GEOMETRY limitations (stats are different in DuckLake, shredding is not supported)",
-        "paths": [
-            "test/sql/types/geo/geometry_stats.test",
-            "test/sql/types/geo/geometry_shred_list.test",
-            "test/sql/types/geo/geometry_shred_limit.test",
-            "test/sql/types/geo/geometry_crs.test",
-            "test/sql/types/geo/geometry_shred.test"
-        ]
+      "reason": "FIXME: GEOMETRY limitations (stats are different in DuckLake, shredding is not supported)",
+      "paths": [
+        "test/sql/types/geo/geometry_stats.test",
+        "test/sql/types/geo/geometry_shred_list.test",
+        "test/sql/types/geo/geometry_shred_limit.test",
+        "test/sql/types/geo/geometry_crs.test",
+        "test/sql/types/geo/geometry_shred.test"
+      ]
     },
     {
       "reason": "Multiple require storage sections create same-named tables, causing conflicts in DuckLake",
@@ -664,6 +663,26 @@
         "test/parquet/variant/variant_comparison.test",
         "test/sql/storage/types/variant/variant_shredding_omit_untyped.test",
         "test/parquet/variant/variant_json_copy.test"
+      ]
+    },
+    {
+      "reason": "MSSQL backend tests \u2014 require sqlserver.json config (test/configs/sqlserver.json)",
+      "paths": [
+        "test/sql/metadata/ducklake_attach_sqlserver.test",
+        "test/sql/metadata/ducklake_settings_sqlserver.test",
+        "test/sql/metadata/ducklake_mssql_txn_pinning.test",
+        "test/sql/metadata/ducklake_v10_to_v11_migration_sqlserver.test",
+        "test/sql/dml/ducklake_dml_sqlserver.test",
+        "test/sql/snapshots/ducklake_time_travel_sqlserver.test",
+        "test/sql/concurrency/ducklake_concurrent_commits_sqlserver.test",
+        "test/sql/errors/ducklake_identifier_length_sqlserver.test",
+        "test/sql/errors/ducklake_mssql_missing_extension.test",
+        "test/sql/errors/ducklake_mssql_bad_credentials.test",
+        "test/sql/errors/ducklake_mssql_error_wrapping.test",
+        "test/sql/maintenance/ducklake_expire_snapshots_sqlserver.test",
+        "test/sql/maintenance/ducklake_compaction_sqlserver.test",
+        "test/sql/inlined/ducklake_inlined_flush_sqlserver.test",
+        "test/sql/walkthrough/ducklake_mssql_orders_walkthrough.test"
       ]
     }
   ]

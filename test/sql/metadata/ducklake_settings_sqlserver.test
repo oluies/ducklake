@@ -1,0 +1,24 @@
+# name: test/sql/metadata/ducklake_settings_sqlserver.test
+# description: ducklake_settings() must report 'sqlserver' for both ATTACH aliases.
+# group: [metadata]
+
+require ducklake
+
+require mssql
+
+
+statement ok
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS lake_a (DATA_PATH '{DATA_PATH}');
+
+query T
+SELECT catalog_type FROM ducklake_settings('lake_a');
+----
+sqlserver
+
+statement ok
+ATTACH 'ducklake:sqlserver:{MSSQL_CONNSTR}' AS lake_b (DATA_PATH '{DATA_PATH}');
+
+query T
+SELECT catalog_type FROM ducklake_settings('lake_b');
+----
+sqlserver

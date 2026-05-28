@@ -1,0 +1,47 @@
+# name: test/sql/snapshots/ducklake_time_travel_sqlserver.test
+# description: US2 — time-travel across three snapshots on a SQL Server catalog.
+# group: [snapshots]
+
+require ducklake
+
+require mssql
+
+
+statement ok
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS lake (DATA_PATH '{DATA_PATH}');
+
+statement ok
+USE lake;
+
+statement ok
+CREATE TABLE points(id BIGINT);
+
+statement ok
+INSERT INTO points SELECT i FROM range(3) t(i);
+
+statement ok
+INSERT INTO points SELECT i FROM range(3, 6) t(i);
+
+statement ok
+INSERT INTO points SELECT i FROM range(6, 10) t(i);
+
+# After three commits we expect three (or more) snapshots; pick the three latest.
+
+statement ok
+CREATE TEMP TABLE last_three AS
+SELECT snapshot_id FROM ducklake_snapshots('lake') ORDER BY snapshot_id DESC LIMIT 3;
+
+query I
+SELECT COUNT(*) FROM points AT (SNAPSHOT => (SELECT MIN(snapshot_id) FROM last_three));
+----
+3
+
+query I
+SELECT COUNT(*) FROM points AT (SNAPSHOT => (SELECT snapshot_id FROM last_three ORDER BY snapshot_id LIMIT 1 OFFSET 1));
+----
+6
+
+query I
+SELECT COUNT(*) FROM points AT (SNAPSHOT => (SELECT MAX(snapshot_id) FROM last_three));
+----
+10

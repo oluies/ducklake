@@ -27,6 +27,8 @@ static unique_ptr<FunctionData> DuckLakeSettingsBind(ClientContext &context, Tab
 		catalog_type = "postgres";
 	} else if (catalog_type == "sqlite_scanner") {
 		catalog_type = "sqlite";
+	} else if (catalog_type == "mssql") {
+		catalog_type = "sqlserver";
 	} else if (catalog_type.empty() || catalog_type == "motherduck" || catalog_type == "md_server") {
 		// default to "duckdb" since DuckDB is the default metadata storage
 		catalog_type = "duckdb";

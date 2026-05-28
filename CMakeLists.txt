@@ -11,6 +11,11 @@ project(${TARGET_NAME})
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+option(ENABLE_MSSQL "Build with SQL Server metadata backend (requires the hugr-lab/mssql community extension at runtime)" OFF)
+if(ENABLE_MSSQL)
+  add_compile_definitions(DUCKLAKE_ENABLE_MSSQL=1)
+endif()
+
 include_directories(src/include)
 
 # Roaring is installed via vcpkg and used for deletion vectors

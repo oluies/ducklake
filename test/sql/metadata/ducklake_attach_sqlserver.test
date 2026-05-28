@@ -1,0 +1,32 @@
+# name: test/sql/metadata/ducklake_attach_sqlserver.test
+# description: US1 — ATTACH against an empty SQL Server schema creates the DuckLake metadata schema and returns zero tables.
+# group: [metadata]
+
+require ducklake
+
+require mssql
+
+
+statement ok
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS lake (DATA_PATH '{DATA_PATH}');
+
+statement ok
+USE lake;
+
+query I
+SELECT COUNT(*) FROM information_schema.tables WHERE table_catalog = 'lake';
+----
+0
+
+# Re-attach an already-initialized catalog — must not fail and must see the same empty state.
+
+statement ok
+DETACH lake;
+
+statement ok
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS lake (DATA_PATH '{DATA_PATH}');
+
+query I
+SELECT COUNT(*) FROM information_schema.tables WHERE table_catalog = 'lake';
+----
+0

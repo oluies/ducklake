@@ -1,0 +1,70 @@
+# name: test/sql/metadata/ducklake_mssql_txn_pinning.test
+# description: Validates FR-003 — DuckLake's BEGIN/COMMIT/ROLLBACK round-trips to a single pinned TDS connection.
+# group: [metadata]
+
+require ducklake
+
+require mssql
+
+
+statement ok
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS lake (DATA_PATH '{DATA_PATH}');
+
+statement ok
+USE lake;
+
+statement ok
+CREATE TABLE pin_check(id BIGINT, label VARCHAR);
+
+# Capture SPID at three points inside one DuckLake transaction.
+# A pinned connection means the three SPIDs are identical.
+
+statement ok
+BEGIN;
+
+statement ok
+CREATE TEMP TABLE spid_log(step VARCHAR, spid INT);
+
+statement ok
+INSERT INTO spid_log SELECT 's1', spid FROM (SELECT * FROM mssql_scan('__ducklake_metadata_lake', 'SELECT @@SPID AS spid')) sub;
+
+statement ok
+INSERT INTO pin_check VALUES (1, 'a'), (2, 'b');
+
+statement ok
+INSERT INTO spid_log SELECT 's2', spid FROM (SELECT * FROM mssql_scan('__ducklake_metadata_lake', 'SELECT @@SPID AS spid')) sub;
+
+statement ok
+INSERT INTO pin_check VALUES (3, 'c');
+
+statement ok
+INSERT INTO spid_log SELECT 's3', spid FROM (SELECT * FROM mssql_scan('__ducklake_metadata_lake', 'SELECT @@SPID AS spid')) sub;
+
+query I
+SELECT COUNT(DISTINCT spid) FROM spid_log;
+----
+1
+
+statement ok
+COMMIT;
+
+query I
+SELECT COUNT(*) FROM pin_check;
+----
+3
+
+# Rollback path: writes must be discarded if BEGIN/ROLLBACK round-trips correctly.
+
+statement ok
+BEGIN;
+
+statement ok
+INSERT INTO pin_check VALUES (99, 'discard');
+
+statement ok
+ROLLBACK;
+
+query I
+SELECT COUNT(*) FROM pin_check WHERE id = 99;
+----
+0

@@ -1,0 +1,34 @@
+# name: test/sql/errors/ducklake_identifier_length_sqlserver.test
+# description: SQL Server backend rejects identifiers > 128 bytes with InvalidInputException.
+# group: [errors]
+
+require ducklake
+
+require mssql
+
+
+statement ok
+ATTACH 'ducklake:{DUCKLAKE_CONNECTION}' AS lake (DATA_PATH '{DATA_PATH}');
+
+statement ok
+USE lake;
+
+# 129-byte identifier — one over the SQL Server limit.
+
+statement error
+CREATE TABLE this_is_a_table_name_that_is_intentionally_made_to_exceed_one_hundred_and_twenty_eight_bytes_in_length_yes_really_we_promise_xx(id BIGINT);
+----
+exceeds the maximum identifier length
+
+statement error
+CREATE SCHEMA this_is_a_schema_name_that_is_intentionally_made_to_exceed_one_hundred_and_twenty_eight_bytes_in_length_yes_really_we_promise_xx;
+----
+exceeds the maximum identifier length
+
+statement ok
+CREATE TABLE long_col_test(id BIGINT);
+
+statement error
+ALTER TABLE long_col_test ADD COLUMN this_is_a_column_name_that_is_intentionally_made_to_exceed_one_hundred_and_twenty_eight_bytes_in_length_really_xyz VARCHAR;
+----
+exceeds the maximum identifier length
